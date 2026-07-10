@@ -20,7 +20,7 @@ from typing import Any
 
 ROOT = Path(__file__).resolve().parent
 VENDOR_DIR = ROOT / "vendors" / "grok-register"
-ADAPTER_BUILD = "2026-07-10-grok-register-2"
+ADAPTER_BUILD = "2026-07-11-browser-start-3"
 
 _sessions: dict[str, dict[str, Any]] = {}
 _lock = threading.RLock()
@@ -231,9 +231,23 @@ def _run_one(
         runner.get_oai_code = moemail_bridge.get_oai_code  # type: ignore[attr-defined]
 
         _update(sid, status="registering", message="starting browser registration")
-        # Force virtual display on headless hosts when available.
+        # Headless/container defaults for DrissionPage.
         if not os.environ.get("DISPLAY"):
             os.environ["USE_XVFB"] = "1"
+        # Prefer new headless in containers even when Xvfb exists.
+        if os.path.exists("/.dockerenv") and not os.environ.get("GROK_REGISTER_HEADLESS"):
+            os.environ["GROK_REGISTER_HEADLESS"] = "1"
+        # Common chromium paths in Debian slim images.
+        if not os.environ.get("GROK_REGISTER_BROWSER_PATH"):
+            for cand in (
+                "/usr/bin/chromium",
+                "/usr/bin/chromium-browser",
+                "/usr/bin/google-chrome",
+                "/usr/bin/google-chrome-stable",
+            ):
+                if os.path.isfile(cand):
+                    os.environ["GROK_REGISTER_BROWSER_PATH"] = cand
+                    break
 
         out_dir = ROOT / "data" / "register_sso"
         out_dir.mkdir(parents=True, exist_ok=True)
@@ -245,7 +259,9 @@ def _run_one(
         except Exception as e:  # noqa: BLE001
             raise RuntimeError(
                 f"browser start failed: {e}. "
-                "Install chromium/chrome + xvfb, and pip install DrissionPage pyvirtualdisplay"
+                "Need chromium/chrome + (optional) xvfb; "
+                "pip install DrissionPage pyvirtualdisplay. "
+                "In Docker rebuild image so chromium is installed."
             ) from e
 
         try:

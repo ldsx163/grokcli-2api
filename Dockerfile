@@ -7,7 +7,11 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     GROK2API_HOST=0.0.0.0 \
     GROK2API_PORT=3000 \
     GROK2API_OPEN_BROWSER=0 \
-    PYTHONPATH=/app/vendors/grok-register
+    PYTHONPATH=/app/vendors/grok-register \
+    GROK_REGISTER_HEADLESS=1 \
+    GROK_REGISTER_BROWSER_PATH=/usr/bin/chromium \
+    CHROME_PATH=/usr/bin/chromium \
+    CHROMIUM_PATH=/usr/bin/chromium
 
 WORKDIR /app
 
@@ -20,7 +24,9 @@ RUN apt-get update \
         chromium \
         chromium-driver \
         fonts-liberation \
-    && rm -rf /var/lib/apt/lists/*
+        fonts-noto-cjk \
+    && rm -rf /var/lib/apt/lists/* \
+    && (test -x /usr/bin/chromium || test -x /usr/bin/chromium-browser || test -x /usr/bin/google-chrome)
 
 COPY requirements.txt /app/requirements.txt
 RUN python -m pip install --no-cache-dir -r /app/requirements.txt

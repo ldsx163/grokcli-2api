@@ -47,7 +47,7 @@ from config import (
 import config as _config
 from models import load_models_from_cache, resolve_model
 
-APP_VERSION = "1.7.0"
+APP_VERSION = "1.7.1"
 
 
 def _on_startup() -> None:

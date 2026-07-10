@@ -1,6 +1,7 @@
 from DrissionPage import Chromium, ChromiumOptions
 from DrissionPage.errors import PageDisconnectedError
 import argparse
+from pathlib import Path
 import shutil
 import tempfile
 import datetime
@@ -83,55 +84,157 @@ if not os.environ.get("DISPLAY") or os.environ.get("USE_XVFB") == "1":
     except Exception as e:
         print(f"[Warn] Xvfb 启动失败: {e}，将尝试直接运行")
 
-co = ChromiumOptions()
-co.auto_port()
-co.set_argument("--no-sandbox")
-co.set_argument("--disable-gpu")
-co.set_argument("--disable-dev-shm-usage")
-co.set_argument("--disable-software-rasterizer")
-if not os.environ.get("DISPLAY"):
-    co.set_argument("--headless=new")
-
-# 从 config.json 读取代理配置给浏览器
-_browser_proxy = ""
-try:
-    import json as _json_mod
-    _cfg_path = os.path.join(os.path.dirname(__file__), "config.json")
-    if os.path.isfile(_cfg_path):
-        with open(_cfg_path, "r") as _f:
-            _cfg = _json_mod.load(_f)
-        _browser_proxy = str(_cfg.get("browser_proxy", "") or _cfg.get("proxy", "") or "")
-except Exception:
-    pass
-if _browser_proxy:
-    co.set_proxy(_browser_proxy)
-    print(f"[*] 浏览器代理: {_browser_proxy}")
-
-# Linux 服务器自动检测 chromium 路径
 import platform
 import shutil
 import glob as _glob_mod
+import socket
+
+
+def _is_docker() -> bool:
+    try:
+        if os.path.exists("/.dockerenv"):
+            return True
+        cgroup = Path("/proc/1/cgroup")
+        if cgroup.is_file() and "docker" in cgroup.read_text(encoding="utf-8", errors="ignore"):
+            return True
+    except Exception:
+        pass
+    return False
+
+
+def _find_linux_browser() -> str:
+    env_path = (
+        os.environ.get("GROK_REGISTER_BROWSER_PATH")
+        or os.environ.get("CHROME_PATH")
+        or os.environ.get("CHROMIUM_PATH")
+        or ""
+    ).strip()
+    if env_path and os.path.isfile(env_path):
+        return env_path
+
+    # Prefer Playwright chromium if present (often less restricted).
+    pw = sorted(
+        _glob_mod.glob(
+            os.path.expanduser("~/.cache/ms-playwright/chromium-*/chrome-linux*/chrome")
+        )
+    )
+    if pw:
+        return pw[-1]
+
+    candidates = [
+        "/usr/bin/chromium",
+        "/usr/bin/chromium-browser",
+        "/usr/bin/google-chrome",
+        "/usr/bin/google-chrome-stable",
+        "/snap/bin/chromium",
+    ]
+    # Also resolve via PATH.
+    for name in ("chromium", "chromium-browser", "google-chrome", "google-chrome-stable", "chrome"):
+        p = shutil.which(name)
+        if p:
+            candidates.insert(0, p)
+    for p in candidates:
+        if p and os.path.isfile(p) and os.access(p, os.X_OK):
+            return p
+    return ""
+
+
+def _pick_free_port() -> int:
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.bind(("127.0.0.1", 0))
+        return int(s.getsockname()[1])
+
+
+def _build_chromium_options(*, user_data_path: str) -> ChromiumOptions:
+    opts = ChromiumOptions()
+    # Avoid fixed 9222 conflicts in containers / multi-job hosts.
+    try:
+        opts.auto_port()
+    except Exception:
+        try:
+            opts.set_local_port(_pick_free_port())
+        except Exception:
+            pass
+
+    # Essential container/Linux flags.
+    for arg in (
+        "--no-sandbox",
+        "--disable-gpu",
+        "--disable-dev-shm-usage",
+        "--disable-software-rasterizer",
+        "--disable-extensions-except=" + os.path.abspath(os.path.join(os.path.dirname(__file__), "turnstilePatch")),
+        "--no-first-run",
+        "--no-default-browser-check",
+        "--disable-background-networking",
+        "--disable-features=TranslateUI,BlinkGenPropertyTrees",
+        "--remote-allow-origins=*",
+        "--window-size=1280,900",
+    ):
+        try:
+            opts.set_argument(arg)
+        except Exception:
+            pass
+
+    # Headless when no display / forced.
+    force_headless = os.environ.get("GROK_REGISTER_HEADLESS", "").strip() in ("1", "true", "yes")
+    if force_headless or (not os.environ.get("DISPLAY")) or _is_docker():
+        try:
+            opts.set_argument("--headless=new")
+        except Exception:
+            opts.set_argument("--headless")
+        # Xvfb may still help some sites; keep USE_XVFB if caller set it.
+
+    # Browser binary
+    global _linux_browser_path
+    if platform.system() == "Linux":
+        _linux_browser_path = _find_linux_browser()
+        if _linux_browser_path:
+            opts.set_browser_path(_linux_browser_path)
+            print(f"[*] Chromium path: {_linux_browser_path}")
+        else:
+            print("[Warn] Chromium path not found; DrissionPage will try default")
+
+    # Proxy from config.json
+    browser_proxy = ""
+    try:
+        import json as _json_mod
+        _cfg_path = os.path.join(os.path.dirname(__file__), "config.json")
+        if os.path.isfile(_cfg_path):
+            with open(_cfg_path, "r", encoding="utf-8") as _f:
+                _cfg = _json_mod.load(_f)
+            browser_proxy = str(
+                _cfg.get("browser_proxy", "") or _cfg.get("proxy", "") or ""
+            ).strip()
+    except Exception:
+        browser_proxy = ""
+    if browser_proxy:
+        opts.set_proxy(browser_proxy)
+        print(f"[*] 浏览器代理: {browser_proxy}")
+
+    try:
+        opts.set_timeouts(base=2)
+    except Exception:
+        pass
+    try:
+        opts.set_user_data_path(user_data_path)
+    except Exception:
+        pass
+
+    # Load turnstile patch extension when not pure headless-only restricted.
+    # Some headless builds reject extensions; ignore failures.
+    extension_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "turnstilePatch"))
+    if os.path.isdir(extension_path):
+        try:
+            opts.add_extension(extension_path)
+        except Exception as e:
+            print(f"[Warn] add_extension failed: {e}")
+
+    return opts
+
+
+# Back-compat globals used by original script.
+co = None  # rebuilt every start_browser()
 _linux_browser_path = ""
-if platform.system() == "Linux":
-    # 优先用 playwright 装的 chromium（无 AppArmor 限制）
-    _pw_chromes = _glob_mod.glob(os.path.expanduser("~/.cache/ms-playwright/chromium-*/chrome-linux*/chrome"))
-    if _pw_chromes:
-        _linux_browser_path = _pw_chromes[0]
-        co.set_browser_path(_linux_browser_path)
-    else:
-        for _candidate in ["/usr/bin/chromium-browser", "/usr/bin/chromium", "/usr/bin/google-chrome"]:
-            if os.path.isfile(_candidate):
-                _linux_browser_path = _candidate
-                co.set_browser_path(_linux_browser_path)
-                break
-    # user_data_path 在 start_browser() 每轮动态设置，此处不固定
-
-co.set_timeouts(base=1)
-
-# 加载修复 MouseEvent.screenX / screenY 的扩展。
-EXTENSION_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), "turnstilePatch"))
-co.add_extension(EXTENSION_PATH)
-
 _chrome_temp_dir: str = ""
 browser = None
 page = None
@@ -145,20 +248,61 @@ DEFAULT_SSO_FILE = os.path.join(_sso_dir, f"sso_{_sso_ts}.txt")
 
 def start_browser():
     # 每轮从全新浏览器开始，使用独立临时 profile 目录避免 Cookie/Session 复用。
-    global browser, page, _chrome_temp_dir
-    if platform.system() == "Linux" and not _linux_browser_path:
-        raise RuntimeError(
-            "未找到 Chrome/Chromium。请先安装浏览器后再运行。"
-            "宿主机至少需要安装以下依赖："
-            "`pip install -r requirements.txt`、`apt install xvfb`、"
-            "`apt install chromium-browser` 或 `apt install google-chrome-stable`。"
-        )
+    global browser, page, _chrome_temp_dir, co, _linux_browser_path
+    if platform.system() == "Linux":
+        _linux_browser_path = _find_linux_browser()
+        if not _linux_browser_path:
+            raise RuntimeError(
+                "未找到 Chrome/Chromium。请安装 chromium/chrome 后重试。"
+                " Docker 镜像应包含 chromium；宿主机: apt install chromium-browser xvfb"
+            )
+
     _chrome_temp_dir = tempfile.mkdtemp(prefix="chrome_run_")
-    co.set_user_data_path(_chrome_temp_dir)
-    browser = Chromium(co)
-    tabs = browser.get_tabs()
-    page = tabs[-1] if tabs else browser.new_tab()
-    return browser, page
+    co = _build_chromium_options(user_data_path=_chrome_temp_dir)
+
+    last_err: Exception | None = None
+    # Retry a few times with a fresh free port / profile if CDP connect fails.
+    for attempt in range(1, 4):
+        try:
+            # Ensure unique port each attempt
+            try:
+                co.auto_port()
+            except Exception:
+                try:
+                    co.set_local_port(_pick_free_port())
+                except Exception:
+                    pass
+            browser = Chromium(co)
+            tabs = browser.get_tabs()
+            page = tabs[-1] if tabs else browser.new_tab()
+            # Sanity: open blank page to ensure CDP is alive.
+            try:
+                page.get("about:blank")
+            except Exception:
+                pass
+            print(f"[*] browser started (attempt={attempt})")
+            return browser, page
+        except Exception as e:  # noqa: BLE001
+            last_err = e
+            print(f"[Warn] browser start attempt {attempt} failed: {e}")
+            try:
+                if browser is not None:
+                    browser.quit()
+            except Exception:
+                pass
+            browser = None
+            page = None
+            # new temp profile for next attempt
+            if _chrome_temp_dir and os.path.isdir(_chrome_temp_dir):
+                shutil.rmtree(_chrome_temp_dir, ignore_errors=True)
+            _chrome_temp_dir = tempfile.mkdtemp(prefix="chrome_run_")
+            co = _build_chromium_options(user_data_path=_chrome_temp_dir)
+            time.sleep(0.6 * attempt)
+
+    raise RuntimeError(
+        "浏览器启动失败（CDP 连接失败）。"
+        f" path={_linux_browser_path or 'auto'}; last_error={last_err}"
+    )
 
 
 def stop_browser():
