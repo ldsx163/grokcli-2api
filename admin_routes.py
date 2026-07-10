@@ -22,22 +22,14 @@ from auth import AuthError, load_credentials
 import config as _config
 import sso_to_auth_json as sso_import
 
-# Registration adapter: prefer 509992828/grok-register browser runner.
-# Fall back to legacy grok_build_adapter only if register_runner is unavailable.
+# Registration adapter: 509992828/grok-register browser runner + MoeMail.
 try:
-    import register_runner as grok_build_adapter
+    import register_runner as reg_adapter
 except Exception as _reg_import_err:  # noqa: BLE001
-    try:
-        import grok_build_adapter  # type: ignore
-    except Exception as _gba_import_err:  # noqa: BLE001
-        grok_build_adapter = None  # type: ignore[assignment]
-        _GBA_IMPORT_ERROR = (
-            f"register_runner: {_reg_import_err}; grok_build_adapter: {_gba_import_err}"
-        )
-    else:
-        _GBA_IMPORT_ERROR = None
+    reg_adapter = None  # type: ignore[assignment]
+    _REG_IMPORT_ERROR = str(_reg_import_err)
 else:
-    _GBA_IMPORT_ERROR = None
+    _REG_IMPORT_ERROR = None
 from config import (
     CLI_VERSION,
     DEFAULT_MODEL,
@@ -212,10 +204,10 @@ async def admin_status():
     # registration fingerprint — useful to detect stale Docker images
     reg_status: dict[str, Any] = {"available": False}
     try:
-        if grok_build_adapter is not None:
-            reg_status = grok_build_adapter.registration_available()
+        if reg_adapter is not None:
+            reg_status = reg_adapter.registration_available()
         else:
-            reg_status = {"available": False, "error": _GBA_IMPORT_ERROR}
+            reg_status = {"available": False, "error": _REG_IMPORT_ERROR}
     except Exception as e:  # noqa: BLE001
         reg_status = {"available": False, "error": str(e)}
 
@@ -580,18 +572,18 @@ async def import_sso(
     }
 
 
-def _require_grok_build_adapter():
-    if grok_build_adapter is None:
+def _require_register_adapter():
+    if reg_adapter is None:
         raise HTTPException(
             status_code=503,
             detail=(
                 "注册机模块不可用: "
-                f"{_GBA_IMPORT_ERROR or 'register_runner import failed'}. "
+                f"{_REG_IMPORT_ERROR or 'register_runner import failed'}. "
                 "请执行: pip install -r requirements.txt "
                 "(需要 DrissionPage / chromium / xvfb；邮箱使用 MoeMail)"
             ),
         )
-    probe = getattr(grok_build_adapter, "registration_available", None)
+    probe = getattr(reg_adapter, "registration_available", None)
     if callable(probe):
         st = probe()
         if not st.get("available"):
@@ -600,7 +592,7 @@ def _require_grok_build_adapter():
                 detail=st.get("error")
                 or "注册组件不可用，请安装 DrissionPage/chromium/xvfb 并配置 MoeMail",
             )
-    return grok_build_adapter
+    return reg_adapter
 
 
 @router.post("/accounts/register-email")
@@ -611,9 +603,9 @@ async def start_email_registration(
 ):
     """Start browser registration (509992828/grok-register) + MoeMail + SSO import."""
     require_admin(request, x_admin_token)
-    gba = _require_grok_build_adapter()
+    adapter = _require_register_adapter()
     try:
-        result = gba.start_registration(
+        result = adapter.start_registration(
             proxy=body.proxy,
             moemail_api_key=body.api_key,
             moemail_base_url=body.base_url,
@@ -622,9 +614,8 @@ async def start_email_registration(
             yescaptcha_key=body.yescaptcha_key,
         )
     except TypeError:
-        # Compatibility with runners that don't accept yescaptcha_key
         try:
-            result = gba.start_registration(
+            result = adapter.start_registration(
                 proxy=body.proxy,
                 moemail_api_key=body.api_key,
                 moemail_base_url=body.base_url,
@@ -666,14 +657,15 @@ async def list_email_registration_sessions(
     x_admin_token: str | None = Header(default=None, alias="X-Admin-Token"),
 ):
     require_admin(request, x_admin_token)
-    if grok_build_adapter is None:
-        return {"sessions": [], "error": _GBA_IMPORT_ERROR}
-    out = grok_build_adapter.list_registration_sessions()
+    if reg_adapter is None:
+        return {"sessions": [], "error": _REG_IMPORT_ERROR}
+    out = reg_adapter.list_registration_sessions()
     try:
-        st = grok_build_adapter.registration_available()
+        st = reg_adapter.registration_available()
         if isinstance(out, dict):
             out["adapter_build"] = st.get("adapter_build")
             out["available"] = st.get("available")
+            out["engine"] = st.get("engine")
     except Exception:
         pass
     return out
@@ -687,8 +679,8 @@ async def get_email_registration_session(
     include_auth_json: int = 0,
 ):
     require_admin(request, x_admin_token)
-    gba = _require_grok_build_adapter()
-    result = gba.get_registration_session(
+    adapter = _require_register_adapter()
+    result = adapter.get_registration_session(
         session_id,
         include_auth_json=bool(include_auth_json),
     )

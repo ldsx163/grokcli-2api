@@ -2,13 +2,6 @@
 $ErrorActionPreference = "Stop"
 Set-Location $PSScriptRoot
 
-# Optional overrides:
-#   $env:GROK2API_PORT = "3000"
-#   $env:GROK2API_HOST = "127.0.0.1"
-#   $env:GROK2API_OPEN_BROWSER = "1"   # set 0 to disable auto-open
-#   $env:GROK2API_API_KEY = "sk-local"
-#   $env:GROK2API_DEFAULT_MODEL = "grok-4.5"
-
 if (-not (Get-Command python -ErrorAction SilentlyContinue)) {
     Write-Error "python not found in PATH. Install Python 3.10+ first."
 }
@@ -19,14 +12,14 @@ if ($LASTEXITCODE -ne 0) {
     python -m pip install -r requirements.txt
 }
 
-python -c "import curl_cffi, requests" 2>$null
+python -c "import curl_cffi, requests, DrissionPage" 2>$null
 if ($LASTEXITCODE -ne 0) {
     Write-Host "Installing remaining dependencies..."
     python -m pip install -r requirements.txt
 }
 
-# Vendored registration package path
-$env:PYTHONPATH = (Join-Path $PSScriptRoot "grok-build-auth") + (
+# Vendored grok-register package path
+$env:PYTHONPATH = (Join-Path $PSScriptRoot "vendors\grok-register") + (
     if ($env:PYTHONPATH) { ";" + $env:PYTHONPATH } else { "" }
 )
 
@@ -45,6 +38,7 @@ if ($LASTEXITCODE -ne 0) {
     Write-Host "[ERROR] service exited with code $LASTEXITCODE"
     Write-Host "Common fixes:"
     Write-Host "  1) python -m pip install -r requirements.txt"
-    Write-Host "  2) ensure grok-build-auth\xconsole_client exists"
+    Write-Host "  2) ensure vendors\grok-register exists"
+    Write-Host "  3) browser registration needs chromium/chrome + xvfb"
     exit $LASTEXITCODE
 }

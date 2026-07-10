@@ -26,17 +26,16 @@ if errorlevel 1 (
   )
 )
 
-REM Ensure registration deps (curl_cffi / requests) from main requirements
-python -c "import curl_cffi,requests" 2>nul
+REM Registration deps (browser automation)
+python -c "import curl_cffi,requests,DrissionPage" 2>nul
 if errorlevel 1 (
   echo Installing remaining dependencies...
   python -m pip install -r requirements.txt
 )
 
-REM Vendored registration package path
-set "PYTHONPATH=%CD%\grok-build-auth;%PYTHONPATH%"
+REM Vendored grok-register package path
+set "PYTHONPATH=%CD%\vendors\grok-register;%PYTHONPATH%"
 
-REM 默认自动打开浏览器；设 GROK2API_OPEN_BROWSER=0 可关闭
 if not defined GROK2API_OPEN_BROWSER set GROK2API_OPEN_BROWSER=1
 if not defined GROK2API_HOST set GROK2API_HOST=127.0.0.1
 if not defined GROK2API_PORT set GROK2API_PORT=3000
@@ -52,7 +51,8 @@ if not %EXITCODE%==0 (
   echo [ERROR] 服务退出，代码 %EXITCODE%
   echo 常见修复:
   echo   1^) python -m pip install -r requirements.txt
-  echo   2^) 确认 grok-build-auth\xconsole_client 目录存在
+  echo   2^) 确认 vendors\grok-register 目录存在
+  echo   3^) 浏览器注册需要 chromium/chrome + xvfb
   pause
 )
 exit /b %EXITCODE%

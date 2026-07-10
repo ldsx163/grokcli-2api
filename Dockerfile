@@ -1,4 +1,4 @@
-# grokcli-2api — self-contained image (vendored grok-build-auth, no submodule)
+# grokcli-2api — self-contained image (vendored grok-register browser engine)
 FROM python:3.12-slim-bookworm
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
@@ -7,7 +7,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     GROK2API_HOST=0.0.0.0 \
     GROK2API_PORT=3000 \
     GROK2API_OPEN_BROWSER=0 \
-    PYTHONPATH=/app/grok-build-auth
+    PYTHONPATH=/app/vendors/grok-register
 
 WORKDIR /app
 

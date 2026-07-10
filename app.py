@@ -102,19 +102,15 @@ def _on_startup() -> None:
     except Exception as e:  # noqa: BLE001
         print(f"  (model health failed: {e})")
     # Registration engine is optional — never block API startup.
-    # Prefer 509992828/grok-register browser runner + MoeMail + sso_to_auth_json.
+    # Engine: 509992828/grok-register + MoeMail + sso_to_auth_json.
     try:
-        try:
-            import register_runner as _reg
-        except Exception:
-            import grok_build_adapter as _reg  # type: ignore
+        import register_runner as _reg
 
         st = _reg.registration_available()
         if st.get("available"):
             print(
                 "  registration: ready "
-                f"(engine={st.get('engine') or 'legacy'} "
-                f"build={st.get('adapter_build')})"
+                f"(engine={st.get('engine')} build={st.get('adapter_build')})"
             )
         else:
             print(
@@ -889,9 +885,9 @@ def _normalize_stream_finish_reason(
 async def health():
     reg: dict[str, Any] = {"available": False}
     try:
-        import grok_build_adapter as _gba
+        import register_runner as _reg
 
-        reg = _gba.registration_available()
+        reg = _reg.registration_available()
     except Exception as e:  # noqa: BLE001
         reg = {"available": False, "error": str(e)}
     try:

@@ -13,9 +13,9 @@ services:
       GROK2API_OPEN_BROWSER: "0"
       # Optional:
       # GROK2API_ADMIN_PASSWORD: "change-me"
-      # GROK2API_YESCAPTCHA_KEY: ""
-      # GROK2API_YESCAPTCHA_ENDPOINT: "https://cn.yescaptcha.com"
       # GROK2API_MOEMAIL_API_KEY: ""
+      # GROK2API_MOEMAIL_BASE_URL: "https://moemail.521884.xyz"
+      # GROK2API_MOEMAIL_DOMAIN: "lolicc.online"
       # GROK2API_XAI_PROXY: ""
     volumes:
       - ./data:/app/data

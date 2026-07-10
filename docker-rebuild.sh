@@ -12,13 +12,14 @@ echo "== local fingerprint =="
 python3 - <<'PY' || python - <<'PY'
 from pathlib import Path
 import re
-adapter = Path('grok_build_adapter.py').read_text(encoding='utf-8')
+runner = Path('register_runner.py').read_text(encoding='utf-8')
 app = Path('app.py').read_text(encoding='utf-8')
-m1 = re.search(r'ADAPTER_BUILD\s*=\s*"([^"]+)"', adapter)
+m1 = re.search(r'ADAPTER_BUILD\s*=\s*"([^"]+)"', runner)
 m2 = re.search(r'APP_VERSION\s*=\s*"([^"]+)"', app)
 print('ADAPTER_BUILD=', m1.group(1) if m1 else None)
 print('APP_VERSION=', m2.group(1) if m2 else None)
-print('old_error_present=', 'create_account failed: HTTP' in adapter)
+print('legacy_adapter_present=', Path('grok_build_adapter.py').exists())
+print('legacy_dir_present=', Path('grok-build-auth').exists())
 PY
 
 echo "== docker stop/remove =="
@@ -39,4 +40,4 @@ docker compose logs --tail=60
 echo "== health =="
 curl -sS "http://127.0.0.1:3000/health" || true
 echo
-echo "Done. /health should show version=1.7.0 and registration.adapter_build=2026-07-10-grok-register-1"
+echo "Done. /health should show version=1.7.0 and registration.engine=509992828/grok-register"
