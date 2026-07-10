@@ -510,12 +510,33 @@ class XConsoleAuthClient:
         rsc_body = raw.decode("utf-8", "replace")
         self._last_rsc_body = rsc_body  # store for fetch_sso_token()
         self._last_create_set_cookies = list(set_cookies or [])
-        ok = (status == 200) and self._signup_response_looks_ok(
+
+        # Hard rule for current xAI deployments:
+        # HTTP 200 + Next.js RSC flight body is transport success.
+        # Real account/session validity is decided by subsequent SSO extraction.
+        looks_ok = self._signup_response_looks_ok(
             rsc_body, set_cookies or [], resp_headers or {}
         )
+        rsc_flight = bool(
+            status == 200
+            and (
+                "react.fragment" in rsc_body.lower()
+                or "/_next/static/chunks/" in rsc_body
+                or "react.fragment" in rsc_body
+            )
+        )
+        ok = (status == 200) and (looks_ok or rsc_flight or bool(set_cookies))
+        # Absolute override: never classify the known success flight as failure.
+        if status == 200 and (
+            "$Sreact.fragment" in rsc_body
+            or "$sreact.fragment" in rsc_body.lower()
+            or "/_next/static/chunks/" in rsc_body
+        ):
+            ok = True
         if self.debug:
             print(
                 f"  [create_account] HTTP {status} ok={ok} "
+                f"looks_ok={looks_ok} rsc_flight={rsc_flight} "
                 f"set_cookies={len(set_cookies or [])} body_len={len(rsc_body)}"
             )
             if status == 200 and not ok:

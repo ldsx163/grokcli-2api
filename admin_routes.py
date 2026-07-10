@@ -201,10 +201,26 @@ async def admin_status():
     host = _config.HOST
     port = _config.PORT
     base_host = "127.0.0.1" if host in ("0.0.0.0", "::", "localhost") else host
+
+    # registration fingerprint — useful to detect stale Docker images
+    reg_status: dict[str, Any] = {"available": False}
+    try:
+        if grok_build_adapter is not None:
+            reg_status = grok_build_adapter.registration_available()
+        else:
+            reg_status = {"available": False, "error": _GBA_IMPORT_ERROR}
+    except Exception as e:  # noqa: BLE001
+        reg_status = {"available": False, "error": str(e)}
+
+    try:
+        from app import APP_VERSION as _app_ver
+    except Exception:
+        _app_ver = "unknown"
+
     return {
         "ok": True,
         "setup_needed": setup,
-        "version": "1.4.0",
+        "version": _app_ver,
         "cli_version": CLI_VERSION,
         "host": host,
         "port": port,
@@ -229,6 +245,7 @@ async def admin_status():
         "token_maintainer": token_maintainer.status(),
         "model_health": model_health.status(),
         "conversation_affinity": conversation_affinity.status(),
+        "registration": reg_status,
     }
 
 

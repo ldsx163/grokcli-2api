@@ -1,0 +1,17 @@
+.git
+.claude
+__pycache__
+**/__pycache__
+*.pyc
+.venv
+venv
+data
+*.log
+.env
+.env.*
+register
+**/.pytest_cache
+**/sso_output
+**/oauth_output
+**/accounts_output
+**/cliproxyapi_auth
