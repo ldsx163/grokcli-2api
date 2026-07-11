@@ -49,7 +49,7 @@ from config import (
 import config as _config
 from models import load_models_from_cache, resolve_model
 
-APP_VERSION = "1.8.10"
+APP_VERSION = "1.8.11"
 
 
 def _on_startup() -> None:
@@ -715,7 +715,6 @@ class _ReasoningCompatState:
             self.mode = "off"
         self.think_open = False
         self.saw_reasoning = False
-        self.closed = False
 
     @property
     def enabled(self) -> bool:
@@ -746,10 +745,11 @@ class _ReasoningCompatState:
                 pieces.append(r)
 
         if c:
-            if self.mode == "think_tag" and self.think_open and not self.closed:
+            # Close only while a think block is open so alternating
+            # reasoning/content streams can reopen and re-close correctly.
+            if self.mode == "think_tag" and self.think_open:
                 pieces.append("\n</think>\n")
                 self.think_open = False
-                self.closed = True
             pieces.append(c)
 
         out = "".join(pieces) if pieces else None
@@ -758,9 +758,8 @@ class _ReasoningCompatState:
         return out, None
 
     def close_tag_chunk(self) -> str | None:
-        if self.mode == "think_tag" and self.think_open and not self.closed:
+        if self.mode == "think_tag" and self.think_open:
             self.think_open = False
-            self.closed = True
             return "\n</think>\n"
         return None
 

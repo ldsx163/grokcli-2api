@@ -2,7 +2,7 @@
 
 把 **Grok OIDC 登录态** 转成 **OpenAI / Anthropic 兼容 API**，并附带 Web 管理台：多 API Key、多账号轮询、设备码 / 导入 / 协议注册。
 
-**当前版本：v1.8.10**
+**当前版本：v1.8.11**
 
 - **独立运行**：不依赖本地 Grok CLI，不调用 `grok login` / 浏览器 OAuth
 - **协议注册**：内置 `grok-build-auth`（HTTP 协议，无需 Chromium）
@@ -14,27 +14,21 @@
 
 ---
 
-## 本次更新（v1.8.10）
+## 本次更新（v1.8.11）
 
 | 方向 | 内容 |
 |------|------|
-| 性能 | 大账号池（400+）下保持 Token 自动续期 / 模型健康检查常开，不阻塞 API |
-| 后台节流 | 默认更保守的 workers/batch；维护任务全局互斥，避免续期与探测同时打满 |
-| 状态接口 | `/health`、`/admin/api/status` 只返回计数摘要，避免每次吐完整账号列表 |
-| 废 token | `invalid_grant` / revoked refresh_token 标记为 `refresh_invalid`，后续周期跳过 |
-| 启动错峰 | Token 维护 / 模型探测启动延迟与批处理可配置，降低冷启动抖动 |
+| 修复 | `think_tag` 兼容态在 reasoning/content 交替输出时，第二次及以后 `<think>` 无法闭合的问题 |
+| 说明 | 去掉 `_ReasoningCompatState.closed` 闩锁，只靠 `think_open` 控制开闭，交替流可正确 reopen/reclose |
+| 默认 | `GROK2API_REASONING_COMPAT` 仍为 `off`；仅在显式 `think_tag` 时写入正文标签 |
 
 ### 相关环境变量（可选）
 
 ```bash
-GROK2API_TOKEN_MAINTAIN=1
-GROK2API_MODEL_HEALTH=1
-GROK2API_TOKEN_MAINTAIN_INTERVAL=180
-GROK2API_MODEL_HEALTH_INTERVAL=900
-GROK2API_TOKEN_REFRESH_WORKERS=2
-GROK2API_MODEL_PROBE_WORKERS=2
-GROK2API_TOKEN_REFRESH_BATCH=20
-GROK2API_MODEL_PROBE_BATCH=15
+# off（默认）: reasoning 走 reasoning_content，正文不带 <think>
+# think_tag: 把 reasoning 包进 <think>...</think> 写入 content（兼容只读 content 的中继）
+# content: 合并 reasoning 到 content，不带标签
+GROK2API_REASONING_COMPAT=off
 ```
 
 ---
